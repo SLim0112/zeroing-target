@@ -760,13 +760,13 @@ function TargetSheet({
   const pageWidth = cm(pageWidthCm);
   const pageHeight = cm(pageHeightCm);
   const centerX = cm(pageWidthCm / 2);
-  const centerY = cm(14.3);
+  const centerY = cm(11.6);
   const gridStep = gridCm * pixelsPerCm;
   const gridBox = {
-    height: cm(16),
+    height: cm(17.6),
     width: cm(16),
     x: centerX - cm(8),
-    y: centerY - cm(8)
+    y: cm(4.4)
   };
   const verticalLines = [];
   const horizontalLines = [];
@@ -782,12 +782,12 @@ function TargetSheet({
       });
     }
   }
-  for (let offset = 0; offset <= gridBox.height / 2 + 0.001; offset += gridStep) {
+  for (let offset = 0; centerY + offset <= gridBox.y + gridBox.height + 0.001; offset += gridStep) {
     horizontalLines.push({
       major: Math.abs(offset % pixelsPerCm) < 0.01,
       y: Number((centerY + offset).toFixed(2))
     });
-    if (offset > 0) {
+    if (offset > 0 && centerY - offset >= gridBox.y - 0.001) {
       horizontalLines.push({
         major: Math.abs(offset % pixelsPerCm) < 0.01,
         y: Number((centerY - offset).toFixed(2))
@@ -879,25 +879,28 @@ function TargetSheet({
           </text>
         )}
 
-        <rect className="info-box" x={cm(1.2)} y={cm(23.4)} width={cm(18.6)} height={cm(3.8)} rx={cm(0.2)} />
-        <text className="sheet-meta" x={cm(1.7)} y={cm(24.3)}>
+        <rect className="info-box" x={cm(1.2)} y={cm(22.5)} width={cm(18.6)} height={cm(5.8)} rx={cm(0.2)} />
+        <text className="sheet-meta" x={cm(1.7)} y={cm(23.35)}>
           瞄具補正：{describeCorrection(correctionCm)} ·{" "}
           {formatSigned(correctionGridCount, 1)} 格
         </text>
-        <text className="sheet-meta" x={cm(1.7)} y={cm(25.1)}>
+        <text className="sheet-meta" x={cm(1.7)} y={cm(24.15)}>
           旋鈕：約 {Math.round(correctionClickCount)} Clicks · A4 實際大小 100%
         </text>
-        <text className="sheet-meta" x={cm(1.7)} y={cm(26)}>
-          使用方式：歸零時瞄具瞄準中心點，紅圈是預期彈著位置。
+        <text className="sheet-meta" x={cm(1.7)} y={cm(25.1)}>
+          使用方式：
         </text>
-        <text className="sheet-meta" x={cm(1.7)} y={cm(26.8)}>
-          歸零時瞄準中心點。紅圈是預期彈著位置，照「旋鈕補正」調整瞄具。
+        <text className="sheet-meta" x={cm(1.7)} y={cm(25.9)}>
+          紅圈是預期彈著位置，歸零雷射瞄準這裡
+        </text>
+        <text className="sheet-meta" x={cm(1.7)} y={cm(26.7)}>
+          再來照旋鈕補正調整瞄具準星對準上方瞄準點。
         </text>
 
-        <line className="scale-line" x1={cm(1.7)} x2={cm(6.7)} y1={cm(28.4)} y2={cm(28.4)} />
-        <line className="scale-line" x1={cm(1.7)} x2={cm(1.7)} y1={cm(28)} y2={cm(28.8)} />
-        <line className="scale-line" x1={cm(6.7)} x2={cm(6.7)} y1={cm(28)} y2={cm(28.8)} />
-        <text className="sheet-meta" x={cm(2.8)} y={cm(29.4)}>
+        <line className="scale-line" x1={cm(13.6)} x2={cm(18.6)} y1={cm(25.85)} y2={cm(25.85)} />
+        <line className="scale-line" x1={cm(13.6)} x2={cm(13.6)} y1={cm(25.45)} y2={cm(26.25)} />
+        <line className="scale-line" x1={cm(18.6)} x2={cm(18.6)} y1={cm(25.45)} y2={cm(26.25)} />
+        <text className="sheet-meta" x={cm(15.1)} y={cm(26.85)}>
           5 cm 比例尺
         </text>
       </svg>
