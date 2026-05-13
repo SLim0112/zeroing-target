@@ -45,6 +45,20 @@ const PRESETS = {
     sightHeightNote:
       "T65 20\" 5.56 預設抓傳統機械瞄具約 2.6\" HOB，換算約 6.6 cm；若加裝高架光學瞄具，請依實際高度改填。"
   },
+  ar145: {
+    id: "ar145",
+    family: "rifle",
+    label: "AR (14.5\" 5.56)",
+    muzzleVelocity: 890,
+    sightHeight: 7.1,
+    ammo: "M855",
+    ballisticCoefficient: 0.304,
+    dragModel: "G1",
+    defaultZero: 300,
+    defaultTarget: 10,
+    sightHeightNote:
+      "AR 14.5\" 預設抓 lower 1/3 cowitness：約 1.24\" / 3.15 cm 皮軌到槍管中心，加上 1.57\" / 4.0 cm 瞄具中心，瞄準高度約 7.1 cm。"
+  },
   pistol4: {
     id: "pistol4",
     family: "pistol",
@@ -92,7 +106,7 @@ const AMMO_OPTIONS = [
     bulletWeightGr: 62,
     muzzleVelocity: 840,
     ballisticCoefficient: 0.304,
-    velocityByPreset: { t91: 840, t112: 880, t65: 930 }
+    velocityByPreset: { t91: 840, t112: 880, t65: 930, ar145: 890 }
   },
   {
     id: "m193",
@@ -101,7 +115,7 @@ const AMMO_OPTIONS = [
     bulletWeightGr: 55,
     muzzleVelocity: 930,
     ballisticCoefficient: 0.243,
-    velocityByPreset: { t91: 900, t112: 930, t65: 975 }
+    velocityByPreset: { t91: 900, t112: 930, t65: 975, ar145: 930 }
   },
   {
     id: "mk262",
@@ -110,7 +124,7 @@ const AMMO_OPTIONS = [
     bulletWeightGr: 77,
     muzzleVelocity: 820,
     ballisticCoefficient: 0.372,
-    velocityByPreset: { t91: 790, t112: 820, t65: 850 }
+    velocityByPreset: { t91: 790, t112: 820, t65: 850, ar145: 790 }
   },
   {
     id: "m80",
@@ -214,38 +228,37 @@ function describeCorrection(cm) {
   return `${cm > 0 ? "往上" : "往下"} ${Math.abs(cm).toFixed(1)} cm`;
 }
 
-function getYAxisStep(yMin, yMax) {
-  const range = yMax - yMin;
-  const magnitude = Math.max(Math.abs(yMin), Math.abs(yMax));
-  if (magnitude > 300 || range > 500) {
-    return 50;
-  }
-  if (magnitude > 150 || range > 250) {
-    return 25;
-  }
-  if (yMin < -50 || yMax > 50 || range > 100) {
-    return 10;
-  }
-  return 5;
-}
-
-function getMinorYAxisStep(labelStep) {
-  if (labelStep >= 50) {
-    return 10;
-  }
-  if (labelStep >= 25) {
+function getNiceStep(roughStep) {
+  if (!Number.isFinite(roughStep) || roughStep <= 0) {
     return 5;
   }
-  if (labelStep >= 10) {
-    return 2;
-  }
-  return 1;
+  const exponent = 10 ** Math.floor(Math.log10(roughStep));
+  const fraction = roughStep / exponent;
+  const multiplier = fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 5 ? 5 : 10;
+  return multiplier * exponent;
 }
 
-function makeTicks(min, max, step) {
+function getYAxisStep(yMin, yMax) {
+  const range = yMax - yMin;
+  const minimumStep = yMin < -50 || yMax > 50 || range > 100 ? 10 : 5;
+  return Math.max(minimumStep, getNiceStep(range / 10));
+}
+
+function getMinorYAxisStep(labelStep, yMin, yMax) {
+  let minorStep = labelStep <= 5 ? 1 : getNiceStep(labelStep / 5);
+  while ((yMax - yMin) / minorStep > 80) {
+    minorStep = getNiceStep(minorStep * 2);
+  }
+  return minorStep;
+}
+
+function makeTicks(min, max, step, maxTicks = 160) {
   const ticks = [];
+  if (!Number.isFinite(min) || !Number.isFinite(max) || !Number.isFinite(step) || step <= 0) {
+    return ticks;
+  }
   const start = Math.ceil(min / step) * step;
-  for (let tick = start; tick <= max + step * 0.001; tick += step) {
+  for (let tick = start; tick <= max + step * 0.001 && ticks.length < maxTicks; tick += step) {
     ticks.push(Number(tick.toFixed(3)));
   }
   return ticks;
@@ -423,6 +436,8 @@ function App() {
   const relevantAmmoOptions = AMMO_OPTIONS.filter((option) =>
     activeTab === "advanced" ? true : option.family === selectedPreset.family
   );
+  const ammoIsListed = relevantAmmoOptions.some((option) => option.label === ammo);
+  const ammoSelectValue = ammo === CUSTOM_AMMO_LABEL || ammoIsListed ? ammo : CUSTOM_AMMO_LABEL;
 
   return (
     <main className="app">
@@ -530,7 +545,7 @@ function App() {
               <div className="field-grid">
                 <label>
                   <LabelWithHelp help={HELP_TEXT.ammo}>彈種</LabelWithHelp>
-                  <select value={ammo} onChange={(event) => applyAmmo(event.target.value)}>
+                  <select value={ammoSelectValue} onChange={(event) => applyAmmo(event.target.value)}>
                     {relevantAmmoOptions.map((option) => (
                       <option key={option.id} value={option.label}>
                         {option.label} · {ammoVelocityForPreset(option, presetId)} m/s
@@ -935,7 +950,7 @@ function TrajectoryChart({
     const rawYMin = Math.min(-15, Math.min(...allHeights));
     const rawYMax = Math.max(20, Math.max(...allHeights));
     const yLabelStep = getYAxisStep(rawYMin, rawYMax);
-    const yMinorStep = getMinorYAxisStep(yLabelStep);
+    const yMinorStep = getMinorYAxisStep(yLabelStep, rawYMin, rawYMax);
     const yMin = Math.floor(rawYMin / yLabelStep) * yLabelStep;
     const yMax = Math.ceil(rawYMax / yLabelStep) * yLabelStep;
     const width = 760;

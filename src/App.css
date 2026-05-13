@@ -224,7 +224,7 @@ h2 {
 }
 
 .preset-grid {
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .preset {
@@ -817,6 +817,7 @@ output strong {
 
   .field-grid,
   .chart-range-control,
+  .preset-grid,
   .quick-row,
   .ipsc-layout {
     grid-template-columns: 1fr;
