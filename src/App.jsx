@@ -446,6 +446,7 @@ function App() {
           <div>
             <p className="eyebrow">A4 公制歸零工具</p>
             <h1>歸零補償靶紙產生器</h1>
+            <p className="title-note">簡易歸零輔助工具，僅供初步參考；實際歸零請至合格靶場並使用實彈確認。</p>
           </div>
           <button className="primary-action" type="button" onClick={() => window.print()}>
             列印 / 另存 PDF

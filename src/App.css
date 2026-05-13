@@ -70,6 +70,14 @@ h1 {
   margin-bottom: 0;
 }
 
+.title-note {
+  color: #4c5d54;
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.45;
+  margin: 8px 0 0;
+}
+
 h2 {
   color: #25342f;
   font-size: 1rem;
