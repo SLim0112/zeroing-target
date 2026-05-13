@@ -1,6 +1,41 @@
 import React, { useMemo, useState } from "react";
 
 const GRAVITY = 9.80665;
+const M_PER_YARD = 0.9144;
+const FPS_PER_MPS = 3.280839895;
+const CM_PER_INCH = 2.54;
+
+const UNIT_LABELS = {
+  metric: {
+    distance: "m",
+    distanceShort: "m",
+    grid: "cm",
+    height: "cm",
+    heightShort: "cm",
+    velocity: "m/s"
+  },
+  imperial: {
+    distance: "yards",
+    distanceShort: "yd",
+    grid: "inch",
+    height: "inch",
+    heightShort: "in",
+    velocity: "fps"
+  }
+};
+
+const GRID_OPTIONS = {
+  metric: [
+    { cm: 0.5, label: "0.5 cm" },
+    { cm: 1, label: "1 cm" },
+    { cm: 2, label: "2 cm" }
+  ],
+  imperial: [
+    { cm: 0.25 * CM_PER_INCH, label: "0.25" },
+    { cm: 0.5 * CM_PER_INCH, label: "0.5" },
+    { cm: 1 * CM_PER_INCH, label: "1" }
+  ]
+};
 
 const PRESETS = {
   t91: {
@@ -76,8 +111,8 @@ const PRESETS = {
 };
 
 const ZERO_SHORTCUTS = [
-  { label: "50/200m 歸零", zero: 200 },
-  { label: "25/300m 歸零", zero: 300 }
+  { distances: [50, 200], zero: 200 },
+  { distances: [25, 300], zero: 300 }
 ];
 
 const CUSTOM_AMMO_LABEL = "自行填寫";
@@ -169,6 +204,78 @@ const safeNumber = (value, fallback) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
 };
+const metersToDisplayDistance = (meters, unitMode) =>
+  unitMode === "imperial" ? meters / M_PER_YARD : meters;
+const displayDistanceToMeters = (distance, unitMode) =>
+  unitMode === "imperial" ? distance * M_PER_YARD : distance;
+const mpsToDisplayVelocity = (mps, unitMode) =>
+  unitMode === "imperial" ? mps * FPS_PER_MPS : mps;
+const displayVelocityToMps = (velocity, unitMode) =>
+  unitMode === "imperial" ? velocity / FPS_PER_MPS : velocity;
+const cmToDisplayHeight = (cm, unitMode) =>
+  unitMode === "imperial" ? cm / CM_PER_INCH : cm;
+const displayHeightToCm = (height, unitMode) =>
+  unitMode === "imperial" ? height * CM_PER_INCH : height;
+
+function formatDisplayNumber(value, digits = 1) {
+  if (!Number.isFinite(value)) {
+    return "";
+  }
+  const rounded = Number(value.toFixed(digits));
+  return `${Object.is(rounded, -0) ? 0 : rounded}`;
+}
+
+function formatConvertedInput(value, converter, digits = 1) {
+  if (value === "") {
+    return "";
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return value;
+  }
+  return formatDisplayNumber(converter(parsed), digits);
+}
+
+function readConvertedInput(value, converter) {
+  if (value === "") {
+    return "";
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? converter(parsed) : value;
+}
+
+function formatDistanceLabel(meters, unitMode, digits = 0, short = false) {
+  const unit = short ? UNIT_LABELS[unitMode].distanceShort : UNIT_LABELS[unitMode].distance;
+  return `${formatDisplayNumber(metersToDisplayDistance(meters, unitMode), digits)} ${unit}`;
+}
+
+function formatHeightLabel(cm, unitMode, digits = 1, unitStyle = "long") {
+  const value = formatDisplayNumber(cmToDisplayHeight(cm, unitMode), digits);
+  if (unitMode === "imperial" && unitStyle === "quote") {
+    return `${value}"`;
+  }
+  const unit = unitStyle === "short" || unitStyle === true
+    ? UNIT_LABELS[unitMode].heightShort
+    : UNIT_LABELS[unitMode].height;
+  return `${value} ${unit}`;
+}
+
+function formatVelocityLabel(mps, unitMode, digits = 0) {
+  return `${formatDisplayNumber(mpsToDisplayVelocity(mps, unitMode), digits)} ${UNIT_LABELS[unitMode].velocity}`;
+}
+
+function formatZeroShortcutLabel(shortcut, unitMode) {
+  const values = shortcut.distances.map((distance) => formatDisplayNumber(distance, 0));
+  return `${values.join("/")}${UNIT_LABELS[unitMode].distanceShort} 歸零`;
+}
+
+function defaultDistanceForUnit(distance, unitMode) {
+  return displayDistanceToMeters(distance, unitMode);
+}
+
+function defaultGridForUnit(unitMode) {
+  return unitMode === "imperial" ? 0.5 * CM_PER_INCH : 1;
+}
 
 function estimateFlightTime(distanceM, muzzleVelocity, ballisticCoefficient, dragModel) {
   const bc = Math.max(ballisticCoefficient, 0.05);
@@ -214,18 +321,18 @@ function formatSigned(value, digits = 1) {
   return `${sign}${value.toFixed(digits)}`;
 }
 
-function describeVerticalOffset(cm) {
+function describeVerticalOffset(cm, unitMode = "metric", heightUnitStyle = "long") {
   if (Math.abs(cm) < 0.05) {
     return "與瞄準點重合";
   }
-  return `瞄準點${cm > 0 ? "上方" : "下方"} ${Math.abs(cm).toFixed(1)} cm`;
+  return `瞄準點${cm > 0 ? "上方" : "下方"} ${formatHeightLabel(Math.abs(cm), unitMode, 1, heightUnitStyle)}`;
 }
 
-function describeCorrection(cm) {
+function describeCorrection(cm, unitMode = "metric") {
   if (Math.abs(cm) < 0.05) {
     return "無需補正";
   }
-  return `${cm > 0 ? "往上" : "往下"} ${Math.abs(cm).toFixed(1)} cm`;
+  return `${cm > 0 ? "往上" : "往下"} ${formatHeightLabel(Math.abs(cm), unitMode, 1)}`;
 }
 
 function getNiceStep(roughStep) {
@@ -311,8 +418,16 @@ function App() {
   const [clickMode, setClickMode] = useState("mrad");
   const [clickValue, setClickValue] = useState(0.1);
   const [chartRangeOverride, setChartRangeOverride] = useState(null);
+  const [unitMode, setUnitMode] = useState("metric");
 
   const selectedPreset = PRESETS[presetId];
+  const unitLabels = UNIT_LABELS[unitMode];
+  const helpText = {
+    ...HELP_TEXT,
+    muzzleVelocity: `子彈離開槍口時的速度，單位為 ${unitLabels.velocity}。初速越高，近距離到遠距離的下墜通常越小。`,
+    sightHeight: `槍管中心到瞄具中心的垂直距離，單位為 ${unitLabels.height}。這會影響近距離歸零時彈著點的位置。`,
+    gridSize: `靶紙格線的實際尺寸，單位為 ${unitLabels.grid}。列印時請用 100% 比例，並用 5 cm 比例尺檢查。`
+  };
   const ammoDescription =
     ammo === CUSTOM_AMMO_LABEL && bulletWeightGr
       ? `${CUSTOM_AMMO_LABEL} ${bulletWeightGr}gr`
@@ -325,16 +440,29 @@ function App() {
     safeNumber(ballisticCoefficient, selectedPreset.ballisticCoefficient)
   );
   const muzzleVelocityMps = Math.max(1, safeNumber(muzzleVelocity, selectedPreset.muzzleVelocity));
+  const chartRangeMax = displayDistanceToMeters(1000, unitMode);
   const chartRangeMin = Math.min(
-    1000,
-    Math.max(50, Math.ceil(Math.max(zeroDistanceM, targetDistanceM) / 5) * 5)
+    chartRangeMax,
+    displayDistanceToMeters(
+      Math.max(
+        50,
+        Math.ceil(metersToDisplayDistance(Math.max(zeroDistanceM, targetDistanceM), unitMode) / 5) * 5
+      ),
+      unitMode
+    )
   );
-  const defaultChartRange = clamp(zeroDistanceM + 150, chartRangeMin, 1000);
+  const defaultChartRange = clamp(
+    zeroDistanceM + displayDistanceToMeters(150, unitMode),
+    chartRangeMin,
+    chartRangeMax
+  );
   const chartRangeDistance = clamp(
     chartRangeOverride ?? defaultChartRange,
     chartRangeMin,
-    1000
+    chartRangeMax
   );
+  const currentGridCm = safeNumber(gridCm, 1);
+  const gridOptions = GRID_OPTIONS[unitMode];
 
   const ballistic = useMemo(() => {
     const angle = solveSightAngle(
@@ -358,7 +486,7 @@ function App() {
       targetDistanceM
     );
     const correctionCm = -impactOffsetCm;
-    const correctionGridCount = correctionCm / safeNumber(gridCm, 1);
+    const correctionGridCount = correctionCm / currentGridCm;
     const correctionClickCount = clickCm > 0 ? correctionCm / clickCm : 0;
 
     return {
@@ -373,23 +501,23 @@ function App() {
     ballisticCoefficientValue,
     clickMode,
     clickValue,
+    currentGridCm,
     dragModel,
-    gridCm,
     muzzleVelocityMps,
     sightHeightCm,
     targetDistanceM,
     zeroDistanceM
   ]);
 
-  const displayOffset = `${formatSigned(ballistic.impactOffsetCm, 1)} cm`;
+  const displayOffset = `${formatSigned(cmToDisplayHeight(ballistic.impactOffsetCm, unitMode), 1)} ${unitLabels.height}`;
 
   const applyPreset = (id, nextTab) => {
     const preset = PRESETS[id];
     const presetAmmo = ammoOptionForLabel(preset.ammo);
     setPresetId(id);
     setActiveTab(nextTab ?? preset.family);
-    setZeroDistance(preset.defaultZero);
-    setTargetDistance(preset.defaultTarget);
+    setZeroDistance(defaultDistanceForUnit(preset.defaultZero, unitMode));
+    setTargetDistance(defaultDistanceForUnit(preset.defaultTarget, unitMode));
     setMuzzleVelocity(preset.muzzleVelocity);
     setSightHeight(preset.sightHeight);
     setAmmo(preset.ammo);
@@ -420,6 +548,14 @@ function App() {
     setAmmo(CUSTOM_AMMO_LABEL);
   };
 
+  const applyUnitMode = (nextUnitMode) => {
+    setUnitMode(nextUnitMode);
+    setZeroDistance(defaultDistanceForUnit(selectedPreset.defaultZero, nextUnitMode));
+    setTargetDistance(defaultDistanceForUnit(selectedPreset.defaultTarget, nextUnitMode));
+    setGridCm(defaultGridForUnit(nextUnitMode));
+    setChartRangeOverride(null);
+  };
+
   const applyTab = (tab) => {
     setActiveTab(tab);
     if (tab === "rifle" && selectedPreset.family !== "rifle") {
@@ -444,7 +580,7 @@ function App() {
       <section className="tool-shell">
         <header className="topbar">
           <div>
-            <p className="eyebrow">A4 公制歸零工具</p>
+            <p className="eyebrow">A4 {unitMode === "metric" ? "公制" : "英制"}歸零工具</p>
             <h1>歸零補償靶紙產生器</h1>
             <p className="title-note">簡易歸零輔助工具，僅供初步參考；實際歸零請至合格靶場並使用實彈確認。</p>
           </div>
@@ -497,46 +633,83 @@ function App() {
             </section>
 
             <section className="panel">
-              <h2>歸零距離</h2>
+              <div className="panel-title-row">
+                <h2>歸零距離</h2>
+                <div className="unit-toggle" aria-label="單位切換">
+                  {[
+                    ["metric", "公制"],
+                    ["imperial", "英制"]
+                  ].map(([id, label]) => (
+                    <button
+                      className={unitMode === id ? "active" : ""}
+                      key={id}
+                      type="button"
+                      onClick={() => applyUnitMode(id)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <p className="panel-hint label-with-help">
                 歸零距離快捷
-                <HelpTip text={HELP_TEXT.zeroShortcut} />
+                <HelpTip text={helpText.zeroShortcut} />
               </p>
               <div className="quick-row">
                 {ZERO_SHORTCUTS.map((shortcut) => (
                   <button
-                    key={shortcut.label}
+                    key={shortcut.zero}
                     type="button"
                     onClick={() => {
-                      setZeroDistance(shortcut.zero);
+                      setZeroDistance(defaultDistanceForUnit(shortcut.zero, unitMode));
                     }}
                   >
-                    {shortcut.label}
+                    {formatZeroShortcutLabel(shortcut, unitMode)}
                   </button>
                 ))}
               </div>
               <div className="field-grid">
                 <label>
-                  <LabelWithHelp help={HELP_TEXT.targetDistance}>靶紙距離</LabelWithHelp>
+                  <LabelWithHelp help={helpText.targetDistance}>靶紙距離</LabelWithHelp>
                   <input
-                    min="5"
+                    min={unitMode === "imperial" ? "5" : "5"}
                     step="5"
                     type="number"
-                    value={targetDistance}
-                    onChange={(event) => setTargetDistance(event.target.value)}
+                    value={formatConvertedInput(
+                      targetDistance,
+                      (value) => metersToDisplayDistance(value, unitMode),
+                      unitMode === "imperial" ? 1 : 0
+                    )}
+                    onChange={(event) =>
+                      setTargetDistance(
+                        readConvertedInput(event.target.value, (value) =>
+                          displayDistanceToMeters(value, unitMode)
+                        )
+                      )
+                    }
                   />
-                  <em>m</em>
+                  <em>{unitLabels.distance}</em>
                 </label>
                 <label>
-                  <LabelWithHelp help={HELP_TEXT.zeroDistance}>歸零距離</LabelWithHelp>
+                  <LabelWithHelp help={helpText.zeroDistance}>歸零距離</LabelWithHelp>
                   <input
-                    min="10"
+                    min={unitMode === "imperial" ? "10" : "10"}
                     step="10"
                     type="number"
-                    value={zeroDistance}
-                    onChange={(event) => setZeroDistance(event.target.value)}
+                    value={formatConvertedInput(
+                      zeroDistance,
+                      (value) => metersToDisplayDistance(value, unitMode),
+                      unitMode === "imperial" ? 1 : 0
+                    )}
+                    onChange={(event) =>
+                      setZeroDistance(
+                        readConvertedInput(event.target.value, (value) =>
+                          displayDistanceToMeters(value, unitMode)
+                        )
+                      )
+                    }
                   />
-                  <em>m</em>
+                  <em>{unitLabels.distance}</em>
                 </label>
               </div>
             </section>
@@ -545,18 +718,18 @@ function App() {
               <h2>彈道</h2>
               <div className="field-grid">
                 <label>
-                  <LabelWithHelp help={HELP_TEXT.ammo}>彈種</LabelWithHelp>
+                  <LabelWithHelp help={helpText.ammo}>彈種</LabelWithHelp>
                   <select value={ammoSelectValue} onChange={(event) => applyAmmo(event.target.value)}>
                     {relevantAmmoOptions.map((option) => (
                       <option key={option.id} value={option.label}>
-                        {option.label} · {ammoVelocityForPreset(option, presetId)} m/s
+                        {option.label} · {formatVelocityLabel(ammoVelocityForPreset(option, presetId), unitMode)}
                       </option>
                     ))}
                     <option value={CUSTOM_AMMO_LABEL}>{CUSTOM_AMMO_LABEL}</option>
                   </select>
                 </label>
                 <label>
-                  <LabelWithHelp help={HELP_TEXT.bulletWeight}>彈頭重量</LabelWithHelp>
+                  <LabelWithHelp help={helpText.bulletWeight}>彈頭重量</LabelWithHelp>
                   <input
                     min="1"
                     step="1"
@@ -567,32 +740,52 @@ function App() {
                   <em>gr</em>
                 </label>
                 <label>
-                  <LabelWithHelp help={HELP_TEXT.muzzleVelocity}>初速</LabelWithHelp>
+                  <LabelWithHelp help={helpText.muzzleVelocity}>初速</LabelWithHelp>
                   <input
                     min="1"
                     step="1"
                     type="number"
-                    value={muzzleVelocity}
-                    onChange={(event) => setMuzzleVelocity(event.target.value)}
+                    value={formatConvertedInput(
+                      muzzleVelocity,
+                      (value) => mpsToDisplayVelocity(value, unitMode),
+                      0
+                    )}
+                    onChange={(event) =>
+                      setMuzzleVelocity(
+                        readConvertedInput(event.target.value, (value) =>
+                          displayVelocityToMps(value, unitMode)
+                        )
+                      )
+                    }
                   />
-                  <em>m/s</em>
+                  <em>{unitLabels.velocity}</em>
                 </label>
                 <label>
-                  <LabelWithHelp help={HELP_TEXT.sightHeight}>
+                  <LabelWithHelp help={helpText.sightHeight}>
                     瞄準高度
                   </LabelWithHelp>
                   <input
                     min="0"
-                    step="0.1"
+                    step={unitMode === "imperial" ? "0.1" : "0.1"}
                     type="number"
-                    value={sightHeight}
-                    onChange={(event) => setSightHeight(event.target.value)}
+                    value={formatConvertedInput(
+                      sightHeight,
+                      (value) => cmToDisplayHeight(value, unitMode),
+                      unitMode === "imperial" ? 2 : 1
+                    )}
+                    onChange={(event) =>
+                      setSightHeight(
+                        readConvertedInput(event.target.value, (value) =>
+                          displayHeightToCm(value, unitMode)
+                        )
+                      )
+                    }
                   />
-                  <em>cm</em>
+                  <em>{unitLabels.height}</em>
                 </label>
                 {activeTab === "advanced" && (
                   <label>
-                    <LabelWithHelp help={HELP_TEXT.ballisticCoefficient}>彈道係數</LabelWithHelp>
+                    <LabelWithHelp help={helpText.ballisticCoefficient}>彈道係數</LabelWithHelp>
                     <input
                       min="0.01"
                       step="0.001"
@@ -605,7 +798,7 @@ function App() {
               </div>
               <p className="panel-hint label-with-help">
                 彈道模型
-                <HelpTip text={HELP_TEXT.dragModel} />
+                <HelpTip text={helpText.dragModel} />
               </p>
               <div className="segmented two-up">
                 {["G1", "G7"].map((model) => (
@@ -625,15 +818,17 @@ function App() {
               <h2>格線與旋鈕</h2>
               <div className="field-grid">
                 <label>
-                  <LabelWithHelp help={HELP_TEXT.gridSize}>格線尺寸</LabelWithHelp>
-                  <select value={gridCm} onChange={(event) => setGridCm(event.target.value)}>
-                    <option value="0.5">0.5 cm</option>
-                    <option value="1">1 cm</option>
-                    <option value="2">2 cm</option>
+                  <LabelWithHelp help={helpText.gridSize}>格線尺寸</LabelWithHelp>
+                  <select value={`${currentGridCm}`} onChange={(event) => setGridCm(event.target.value)}>
+                    {gridOptions.map((option) => (
+                      <option key={`${option.cm}-${option.label}`} value={`${option.cm}`}>
+                        {option.label}
+                      </option>
+                    ))}
                   </select>
                 </label>
                 <label>
-                  <LabelWithHelp help={HELP_TEXT.clickValue}>每 Click</LabelWithHelp>
+                  <LabelWithHelp help={helpText.clickValue}>每 Click</LabelWithHelp>
                   <input
                     min="0.001"
                     step="0.01"
@@ -646,7 +841,7 @@ function App() {
               </div>
               <p className="panel-hint label-with-help">
                 旋鈕單位
-                <HelpTip text={HELP_TEXT.clickMode} />
+                <HelpTip text={helpText.clickMode} />
               </p>
               <div className="segmented two-up">
                 {[
@@ -677,7 +872,10 @@ function App() {
                 label="旋鈕補正"
                 value={`${Math.round(ballistic.correctionClickCount)} Clicks`}
               />
-              <Metric label="1 Click" value={`${ballistic.clickCm.toFixed(2)} cm @ 靶紙距離`} />
+              <Metric
+                label="1 Click"
+                value={`${formatHeightLabel(ballistic.clickCm, unitMode, 2)} @ 靶紙距離`}
+              />
             </div>
 
             <TargetSheet
@@ -686,10 +884,11 @@ function App() {
               correctionClickCount={ballistic.correctionClickCount}
               correctionCm={ballistic.correctionCm}
               correctionGridCount={ballistic.correctionGridCount}
-              gridCm={safeNumber(gridCm, 1)}
+              gridCm={currentGridCm}
               presetLabel={selectedPreset.label}
               targetDistance={targetDistanceM}
               impactOffsetCm={ballistic.impactOffsetCm}
+              unitMode={unitMode}
               zeroDistance={zeroDistanceM}
             />
 
@@ -713,6 +912,7 @@ function App() {
               onChartRangeReset={() => setChartRangeOverride(null)}
               sightHeight={sightHeightCm}
               targetDistance={targetDistanceM}
+              unitMode={unitMode}
               zeroDistance={zeroDistanceM}
             />
 
@@ -723,6 +923,7 @@ function App() {
               dragModel={dragModel}
               muzzleVelocity={muzzleVelocityMps}
               sightHeight={sightHeightCm}
+              unitMode={unitMode}
               zeroDistance={zeroDistanceM}
             />
           </section>
@@ -751,6 +952,7 @@ function TargetSheet({
   impactOffsetCm,
   presetLabel,
   targetDistance,
+  unitMode,
   zeroDistance
 }) {
   const pixelsPerCm = 50;
@@ -839,8 +1041,10 @@ function TargetSheet({
           {presetLabel} · {ammo}
         </text>
         <text className="sheet-meta" x={cm(1.2)} y={cm(3.4)}>
-          歸零 {zeroDistance} m · 靶紙距離 {targetDistance} m · 每格 {gridCm} cm · 1 Click ={" "}
-          {clickCm.toFixed(2)} cm
+          歸零 {formatDistanceLabel(zeroDistance, unitMode, unitMode === "imperial" ? 1 : 0)} · 靶紙距離{" "}
+          {formatDistanceLabel(targetDistance, unitMode, unitMode === "imperial" ? 1 : 0)} · 每格{" "}
+          {formatHeightLabel(gridCm, unitMode, unitMode === "imperial" ? 2 : 1)} · 1 Click ={" "}
+          {formatHeightLabel(clickCm, unitMode, 2)}
         </text>
 
         <line className="axis" x1={centerX - cm(3.8)} x2={centerX + cm(3.8)} y1={centerY} y2={centerY} />
@@ -871,7 +1075,7 @@ function TargetSheet({
           預期落點
         </text>
         <text className="point-label" x={centerX + cm(0.9)} y={impactY + cm(0.38)}>
-          {describeVerticalOffset(impactOffsetCm)}
+          {describeVerticalOffset(impactOffsetCm, unitMode)}
         </text>
         {impactClamped && (
           <text className="point-label" x={centerX + cm(0.9)} y={impactY + cm(1.1)}>
@@ -881,7 +1085,7 @@ function TargetSheet({
 
         <rect className="info-box" x={cm(1.2)} y={cm(22.5)} width={cm(18.6)} height={cm(5.8)} rx={cm(0.2)} />
         <text className="sheet-meta" x={cm(1.7)} y={cm(23.35)}>
-          瞄具補正：{describeCorrection(correctionCm)} ·{" "}
+          瞄具補正：{describeCorrection(correctionCm, unitMode)} ·{" "}
           {formatSigned(correctionGridCount, 1)} 格
         </text>
         <text className="sheet-meta" x={cm(1.7)} y={cm(24.15)}>
@@ -921,6 +1125,7 @@ function TrajectoryChart({
   onChartRangeReset,
   sightHeight,
   targetDistance,
+  unitMode,
   zeroDistance
 }) {
   const chart = useMemo(() => {
@@ -928,31 +1133,37 @@ function TrajectoryChart({
     const sampleCount = 140;
     const samples = Array.from({ length: sampleCount }, (_, index) => {
       const distance = (maxDistance * index) / (sampleCount - 1);
-      const height = trajectoryCmAt(
-        distance,
+      const height = cmToDisplayHeight(
+        trajectoryCmAt(
+          distance,
+          angle,
+          sightHeight,
+          muzzleVelocity,
+          ballisticCoefficient,
+          dragModel
+        ),
+        unitMode
+      );
+      return { distance, height };
+    });
+    const targetHeight = cmToDisplayHeight(
+      trajectoryCmAt(
+        targetDistance,
         angle,
         sightHeight,
         muzzleVelocity,
         ballisticCoefficient,
         dragModel
-      );
-      return { distance, height };
-    });
-    const targetHeight = trajectoryCmAt(
-      targetDistance,
-      angle,
-      sightHeight,
-      muzzleVelocity,
-      ballisticCoefficient,
-      dragModel
+      ),
+      unitMode
     );
     const allHeights = [
       ...samples.map((sample) => sample.height),
       0,
       targetHeight
     ];
-    const rawYMin = Math.min(-15, Math.min(...allHeights));
-    const rawYMax = Math.max(20, Math.max(...allHeights));
+    const rawYMin = Math.min(cmToDisplayHeight(-15, unitMode), Math.min(...allHeights));
+    const rawYMax = Math.max(cmToDisplayHeight(20, unitMode), Math.max(...allHeights));
     const yLabelStep = getYAxisStep(rawYMin, rawYMax);
     const yMinorStep = getMinorYAxisStep(yLabelStep, rawYMin, rawYMax);
     const yMin = Math.floor(rawYMin / yLabelStep) * yLabelStep;
@@ -973,12 +1184,19 @@ function TrajectoryChart({
       .join(" ");
     const yFineTicks = makeTicks(yMin, yMax, yMinorStep);
     const yLabelTicks = makeTicks(yMin, yMax, yLabelStep);
-    const xTickStep = maxDistance <= 150 ? 25 : maxDistance <= 400 ? 50 : 100;
+    const maxDistanceDisplay = metersToDisplayDistance(maxDistance, unitMode);
+    const xTickStep = maxDistanceDisplay <= 150 ? 25 : maxDistanceDisplay <= 400 ? 50 : 100;
     const xTicks = [];
-    for (let tick = 0; tick < maxDistance; tick += xTickStep) {
-      xTicks.push(tick);
+    for (let tick = 0; tick < maxDistanceDisplay; tick += xTickStep) {
+      xTicks.push({
+        distance: displayDistanceToMeters(tick, unitMode),
+        display: tick
+      });
     }
-    xTicks.push(maxDistance);
+    xTicks.push({
+      distance: maxDistance,
+      display: maxDistanceDisplay
+    });
 
     return {
       maxDistance,
@@ -1011,15 +1229,19 @@ function TrajectoryChart({
     muzzleVelocity,
     sightHeight,
     targetDistance,
+    unitMode,
     zeroDistance
   ]);
+  const unitLabels = UNIT_LABELS[unitMode];
+  const axisDigits = Math.abs(chart.yLabelStep) < 1 ? 1 : 0;
 
   return (
     <section className="chart-panel" aria-label="彈道曲線">
       <div className="chart-header">
         <h2>彈道曲線</h2>
         <span>
-          高低差 {formatSigned(chart.yMin, 0)} 至 {formatSigned(chart.yMax, 0)} cm
+          高低差 {formatSigned(chart.yMin, axisDigits)} 至 {formatSigned(chart.yMax, axisDigits)}{" "}
+          {unitLabels.height}
         </span>
       </div>
       <div className="chart-range-control">
@@ -1027,14 +1249,14 @@ function TrajectoryChart({
           <span>顯示距離範圍</span>
           <input
             min={chartRangeMin}
-            max="1000"
-            step="5"
+            max={displayDistanceToMeters(1000, unitMode)}
+            step={displayDistanceToMeters(5, unitMode)}
             type="range"
             value={chart.maxDistance}
             onChange={(event) => onChartRangeChange(Number(event.target.value))}
           />
         </label>
-        <strong>{chart.maxDistance.toFixed(0)} m</strong>
+        <strong>{formatDistanceLabel(chart.maxDistance, unitMode, 0, true)}</strong>
         <button
           disabled={Math.abs(chart.maxDistance - defaultChartRange) < 0.5}
           type="button"
@@ -1058,9 +1280,9 @@ function TrajectoryChart({
         {chart.xTicks.map((tick) => (
           <line
             className="chart-grid vertical"
-            key={`x-${tick}`}
-            x1={chart.xScale(tick)}
-            x2={chart.xScale(tick)}
+            key={`x-${tick.display}`}
+            x1={chart.xScale(tick.distance)}
+            x2={chart.xScale(tick.distance)}
             y1={chart.plot.top}
             y2={chart.height - chart.plot.bottom}
           />
@@ -1081,12 +1303,12 @@ function TrajectoryChart({
         />
         {chart.yLabelTicks.map((tick) => (
           <text className="chart-label axis-label" key={`yl-${tick}`} x={chart.plot.left - 10} y={chart.yScale(tick) + 4}>
-            {formatSigned(tick, 0)} cm
+            {formatSigned(tick, axisDigits)} {unitLabels.heightShort}
           </text>
         ))}
         {chart.xTicks.map((tick) => (
-          <text className="chart-label x-label" key={`xl-${tick}`} x={chart.xScale(tick)} y={chart.height - 18}>
-            {tick.toFixed(0)} m
+          <text className="chart-label x-label" key={`xl-${tick.display}`} x={chart.xScale(tick.distance)} y={chart.height - 18}>
+            {formatDisplayNumber(tick.display, 0)} {unitLabels.distanceShort}
           </text>
         ))}
         <path className="trajectory-line" d={chart.path} />
@@ -1101,8 +1323,8 @@ function TrajectoryChart({
       </svg>
       <div className="trajectory-stats">
         <div>
-          <span>槍口初速 (m/s)</span>
-          <strong>{muzzleVelocity.toFixed(0)}</strong>
+          <span>槍口初速 ({unitLabels.velocity})</span>
+          <strong>{formatDisplayNumber(mpsToDisplayVelocity(muzzleVelocity, unitMode), 0)}</strong>
         </div>
         <div>
           <span>彈頭重 (gr)</span>
@@ -1110,7 +1332,7 @@ function TrajectoryChart({
         </div>
         <div>
           <span>歸零距離</span>
-          <strong>{zeroDistance.toFixed(0)} m</strong>
+          <strong>{formatDistanceLabel(zeroDistance, unitMode, 0, true)}</strong>
         </div>
       </div>
     </section>
@@ -1124,12 +1346,14 @@ function IPSCImpactMap({
   dragModel,
   muzzleVelocity,
   sightHeight,
+  unitMode,
   zeroDistance
 }) {
   const ipsc = useMemo(
     () => {
       const labelOverlapGap = 2.6;
-      const readouts = TRAJECTORY_DISTANCES.map((distance) => {
+      const readouts = TRAJECTORY_DISTANCES.map((displayDistance) => {
+        const distance = displayDistanceToMeters(displayDistance, unitMode);
         const offsetCm = trajectoryCmAt(
           distance,
           angle,
@@ -1142,6 +1366,7 @@ function IPSCImpactMap({
         const rawY = aimY - offsetCm;
         return {
           distance,
+          displayDistance,
           isVisible: rawY >= 4 && rawY <= 80,
           offsetCm,
           x: 0,
@@ -1152,12 +1377,12 @@ function IPSCImpactMap({
       const labelSideByDistance = new Map();
 
       visiblePoints.forEach((point) => {
-        labelSideByDistance.set(point.distance, point.offsetCm > 0.25 ? "left" : "right");
+        labelSideByDistance.set(point.displayDistance, point.offsetCm > 0.25 ? "left" : "right");
       });
 
       visiblePoints
-        .filter((point) => labelSideByDistance.get(point.distance) === "right")
-        .sort((a, b) => a.y - b.y || a.distance - b.distance)
+        .filter((point) => labelSideByDistance.get(point.displayDistance) === "right")
+        .sort((a, b) => a.y - b.y || a.displayDistance - b.displayDistance)
         .forEach((point, index, rightSidePoints) => {
           let overlappingPoint = null;
           for (let previousIndex = index - 1; previousIndex >= 0; previousIndex -= 1) {
@@ -1170,17 +1395,21 @@ function IPSCImpactMap({
           if (!overlappingPoint) {
             return;
           }
-          const pointPriority = point.distance === zeroDistance ? 2 : point.distance <= 50 ? 1 : 0;
+          const pointPriority = Math.abs(point.distance - zeroDistance) < 0.5 ? 2 : point.displayDistance <= 50 ? 1 : 0;
           const previousPriority =
-            overlappingPoint.distance === zeroDistance ? 2 : overlappingPoint.distance <= 50 ? 1 : 0;
+            Math.abs(overlappingPoint.distance - zeroDistance) < 0.5
+              ? 2
+              : overlappingPoint.displayDistance <= 50
+                ? 1
+                : 0;
           const moveDistance =
-            pointPriority < previousPriority ? point.distance : overlappingPoint.distance;
+            pointPriority < previousPriority ? point.displayDistance : overlappingPoint.displayDistance;
           labelSideByDistance.set(moveDistance, "left");
         });
 
       const points = visiblePoints.map((point) => ({
         ...point,
-        labelSide: labelSideByDistance.get(point.distance) ?? "right"
+        labelSide: labelSideByDistance.get(point.displayDistance) ?? "right"
       }));
 
       return {
@@ -1188,23 +1417,25 @@ function IPSCImpactMap({
         readouts
       };
     },
-    [angle, ballisticCoefficient, dragModel, muzzleVelocity, sightHeight, zeroDistance]
+    [angle, ballisticCoefficient, dragModel, muzzleVelocity, sightHeight, unitMode, zeroDistance]
   );
+  const unitLabels = UNIT_LABELS[unitMode];
 
   return (
-    <section className="ipsc-panel" aria-label="IPSC 多距離落點圖">
+    <section className="ipsc-panel" aria-label="人形靶多距離落點圖">
       <div className="chart-header">
         <div>
-          <h2>IPSC 多距離落點</h2>
+          <h2>人形靶多距離落點</h2>
           <p className="panel-hint">
-            {ammo} · {muzzleVelocity.toFixed(0)} m/s · {zeroDistance} m 歸零
+            {ammo} · {formatVelocityLabel(muzzleVelocity, unitMode)} ·{" "}
+            {formatDistanceLabel(zeroDistance, unitMode, 0, true)} 歸零
           </p>
         </div>
-        <span>25 至 500 m</span>
+        <span>25 至 500 {unitLabels.distanceShort}</span>
       </div>
       <div className="ipsc-layout">
         <svg className="ipsc-target" viewBox="-34 -6 68 92" role="img">
-          <title>標準 IPSC 靶多距離落點</title>
+          <title>人形靶多距離落點</title>
           <polygon
             className="ipsc-body"
             points="-9,0 9,0 9,14 23,14 31,22 31,58 19,82 -19,82 -31,58 -31,22 -23,14 -9,14"
@@ -1233,7 +1464,7 @@ function IPSCImpactMap({
                 x={point.labelSide === "left" ? "-3" : "3"}
                 y={point.y}
               >
-                {point.distance}
+                {point.displayDistance}
               </text>
             </g>
           ))}
@@ -1241,10 +1472,10 @@ function IPSCImpactMap({
         <div className="ipsc-readout">
           {ipsc.readouts.map((point) => (
             <div className={point.isVisible ? "" : "outside"} key={point.distance}>
-              <strong>{point.distance} m</strong>
+              <strong>{point.displayDistance} {unitLabels.distanceShort}</strong>
               <span>
                 {point.isVisible ? "" : "超出靶面 · "}
-                {describeVerticalOffset(point.offsetCm)}
+                {describeVerticalOffset(point.offsetCm, unitMode, "quote")}
               </span>
             </div>
           ))}

@@ -166,6 +166,43 @@ h2 {
   margin-bottom: 8px;
 }
 
+.panel-title-row {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.panel-title-row h2 {
+  margin-bottom: 0;
+}
+
+.unit-toggle {
+  background: #eef4f0;
+  border: 1px solid #c9d5ce;
+  border-radius: 7px;
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: hidden;
+}
+
+.unit-toggle button {
+  background: transparent;
+  border: 0;
+  color: #45554d;
+  font-size: 0.78rem;
+  font-weight: 800;
+  min-height: 30px;
+  min-width: 48px;
+  padding: 0 10px;
+}
+
+.unit-toggle button.active {
+  background: #173f35;
+  color: #ffffff;
+}
+
 .primary-action,
 .tabs button,
 .preset,
@@ -318,7 +355,7 @@ label em {
 }
 
 label:has(em) input {
-  padding-right: 48px;
+  padding-right: 62px;
 }
 
 output {
@@ -597,8 +634,8 @@ output strong {
 .ipsc-layout {
   align-items: center;
   display: grid;
-  grid-template-columns: minmax(230px, 0.85fr) minmax(220px, 1fr);
-  gap: 16px;
+  grid-template-columns: minmax(280px, 1.25fr) minmax(180px, 0.75fr);
+  gap: 12px;
 }
 
 .ipsc-target {
@@ -606,8 +643,10 @@ output strong {
   border: 1px solid #d5ded8;
   border-radius: 6px;
   display: block;
-  max-height: 520px;
-  width: 100%;
+  justify-self: center;
+  max-height: 560px;
+  max-width: 480px;
+  width: min(100%, 480px);
 }
 
 .ipsc-body {
@@ -659,25 +698,27 @@ output strong {
 
 .ipsc-readout {
   display: grid;
-  gap: 8px;
+  gap: 4px;
 }
 
 .ipsc-readout div {
   align-items: center;
   border-bottom: 1px solid #edf1ee;
   display: grid;
-  gap: 8px;
-  grid-template-columns: 70px 1fr;
-  min-height: 32px;
+  gap: 6px;
+  grid-template-columns: 58px 1fr;
+  min-height: 26px;
 }
 
 .ipsc-readout strong {
   color: #17211d;
+  font-size: 0.88rem;
 }
 
 .ipsc-readout span {
   color: #45554d;
-  font-size: 0.92rem;
+  font-size: 0.82rem;
+  line-height: 1.25;
 }
 
 .ipsc-readout .outside span,
