@@ -1,0 +1,4 @@
+2026/05/11-22:10:04.471 7088 Creating DB C:\Users\Samuel\Documents\Claude\Projects\Zeroing\.edge-logs\Default\EdgeCoupons/coupons_data.db since it was missing.
+2026/05/11-22:10:04.477 7088 Reusing MANIFEST C:\Users\Samuel\Documents\Claude\Projects\Zeroing\.edge-logs\Default\EdgeCoupons/coupons_data.db/MANIFEST-000001
+2026/05/11-22:10:04.480 5f8 Level-0 table #5: started
+2026/05/11-22:10:04.484 5f8 Level-0 table #5: 682457 bytes OK

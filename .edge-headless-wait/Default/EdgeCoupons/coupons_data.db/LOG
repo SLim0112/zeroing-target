@@ -1,0 +1,4 @@
+2026/05/11-22:09:54.129 7b0c Creating DB C:\Users\Samuel\Documents\Claude\Projects\Zeroing\.edge-headless-wait\Default\EdgeCoupons/coupons_data.db since it was missing.
+2026/05/11-22:09:54.134 7b0c Reusing MANIFEST C:\Users\Samuel\Documents\Claude\Projects\Zeroing\.edge-headless-wait\Default\EdgeCoupons/coupons_data.db/MANIFEST-000001
+2026/05/11-22:09:54.137 181c Level-0 table #5: started
+2026/05/11-22:09:54.140 181c Level-0 table #5: 682457 bytes OK
