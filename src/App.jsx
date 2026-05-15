@@ -4,6 +4,7 @@ const GRAVITY = 9.80665;
 const M_PER_YARD = 0.9144;
 const FPS_PER_MPS = 3.280839895;
 const CM_PER_INCH = 2.54;
+const DEFAULT_IR_CONVERGENCE_DISTANCE_M = 200 * M_PER_YARD;
 
 const UNIT_LABELS = {
   metric: {
@@ -130,7 +131,12 @@ const HELP_TEXT = {
   dragModel: "選擇彈道係數使用的模型。一般步槍彈多用 G1，部分長尖彈可用 G7。",
   gridSize: "靶紙格線的實際尺寸。列印時請用 100% 比例，並用 5 cm 比例尺檢查。",
   clickValue: "每轉一格旋鈕代表的角度量，例如 0.25 MOA 或 0.1 MRAD。",
-  clickMode: "選擇瞄具旋鈕角度單位，用來換算「旋鈕補正」需要調整幾 Click。"
+  clickMode: "選擇瞄具旋鈕角度單位，用來換算「旋鈕補正」需要調整幾 Click。",
+  irLaser: "啟用後會在 A4 靶紙上加入綠色 IR 雷射校正點。",
+  irVerticalOffset: "日間瞄具中心線到 IR 雷射發射口中心線的垂直偏差。正值代表雷射在瞄具下方，負值代表在上方。",
+  irHorizontalOffset: "日間瞄具中心線到 IR 雷射發射口中心線的水平偏差。正值代表雷射在瞄具右側，負值代表在左側。",
+  irConvergenceDistance: "IR 雷射光束與紅點瞄準線交會的距離。平行歸零時此欄位僅供參考，特定距離交會歸零時會用來計算綠色校正點。",
+  irZeroMode: "平行歸零會保留實體偏差；特定距離交會歸零會用 200 yd 作為 50/200 歸零的遠端交點。"
 };
 
 const AMMO_OPTIONS = [
@@ -277,6 +283,29 @@ function defaultGridForUnit(unitMode) {
   return unitMode === "imperial" ? 0.5 * CM_PER_INCH : 1;
 }
 
+function calculateIrLaserOffset(
+  enabled,
+  mode,
+  verticalOffsetCm,
+  horizontalOffsetCm,
+  targetDistanceM,
+  convergenceDistanceM
+) {
+  if (!enabled) {
+    return null;
+  }
+  const convergenceDistance = Math.max(1, convergenceDistanceM);
+  const ratio = mode === "convergent"
+    ? 1 - targetDistanceM / convergenceDistance
+    : 1;
+  return {
+    convergenceDistanceM: convergenceDistance,
+    mode,
+    xCm: horizontalOffsetCm * ratio,
+    yCmDown: verticalOffsetCm * ratio
+  };
+}
+
 function estimateFlightTime(distanceM, muzzleVelocity, ballisticCoefficient, dragModel) {
   const bc = Math.max(ballisticCoefficient, 0.05);
   const dragBase = dragModel === "G7" ? 9000 : 6500;
@@ -419,6 +448,13 @@ function App() {
   const [clickValue, setClickValue] = useState(0.1);
   const [chartRangeOverride, setChartRangeOverride] = useState(null);
   const [unitMode, setUnitMode] = useState("metric");
+  const [irLaserEnabled, setIrLaserEnabled] = useState(false);
+  const [irLaserVerticalOffsetCm, setIrLaserVerticalOffsetCm] = useState(0);
+  const [irLaserHorizontalOffsetCm, setIrLaserHorizontalOffsetCm] = useState(0);
+  const [irLaserConvergenceDistance, setIrLaserConvergenceDistance] = useState(
+    DEFAULT_IR_CONVERGENCE_DISTANCE_M
+  );
+  const [irLaserZeroMode, setIrLaserZeroMode] = useState("parallel");
 
   const selectedPreset = PRESETS[presetId];
   const unitLabels = UNIT_LABELS[unitMode];
@@ -510,6 +546,25 @@ function App() {
   ]);
 
   const displayOffset = `${formatSigned(cmToDisplayHeight(ballistic.impactOffsetCm, unitMode), 1)} ${unitLabels.height}`;
+  const irLaserOffset = useMemo(
+    () =>
+      calculateIrLaserOffset(
+        irLaserEnabled,
+        irLaserZeroMode,
+        safeNumber(irLaserVerticalOffsetCm, 0),
+        safeNumber(irLaserHorizontalOffsetCm, 0),
+        targetDistanceM,
+        safeNumber(irLaserConvergenceDistance, DEFAULT_IR_CONVERGENCE_DISTANCE_M)
+      ),
+    [
+      irLaserConvergenceDistance,
+      irLaserEnabled,
+      irLaserHorizontalOffsetCm,
+      irLaserVerticalOffsetCm,
+      irLaserZeroMode,
+      targetDistanceM
+    ]
+  );
 
   const applyPreset = (id, nextTab) => {
     const preset = PRESETS[id];
@@ -859,6 +914,121 @@ function App() {
                 ))}
               </div>
             </section>
+
+            <section className="panel ir-panel">
+              <label className="ir-toggle">
+                <input
+                  checked={irLaserEnabled}
+                  type="checkbox"
+                  onChange={(event) => setIrLaserEnabled(event.target.checked)}
+                />
+                <span>
+                  IR雷射歸零
+                  <HelpTip text={helpText.irLaser} />
+                </span>
+              </label>
+              {irLaserEnabled && (
+                <div className="ir-settings">
+                  <div className="field-grid">
+                    <label>
+                      <LabelWithHelp help={helpText.irVerticalOffset}>垂直距離</LabelWithHelp>
+                      <input
+                        step="0.1"
+                        type="number"
+                        value={formatConvertedInput(
+                          irLaserVerticalOffsetCm,
+                          (value) => cmToDisplayHeight(value, unitMode),
+                          unitMode === "imperial" ? 2 : 1
+                        )}
+                        onChange={(event) =>
+                          setIrLaserVerticalOffsetCm(
+                            readConvertedInput(event.target.value, (value) =>
+                              displayHeightToCm(value, unitMode)
+                            )
+                          )
+                        }
+                      />
+                      <em>{unitLabels.height}</em>
+                    </label>
+                    <label>
+                      <LabelWithHelp help={helpText.irHorizontalOffset}>水平距離</LabelWithHelp>
+                      <input
+                        step="0.1"
+                        type="number"
+                        value={formatConvertedInput(
+                          irLaserHorizontalOffsetCm,
+                          (value) => cmToDisplayHeight(value, unitMode),
+                          unitMode === "imperial" ? 2 : 1
+                        )}
+                        onChange={(event) =>
+                          setIrLaserHorizontalOffsetCm(
+                            readConvertedInput(event.target.value, (value) =>
+                              displayHeightToCm(value, unitMode)
+                            )
+                          )
+                        }
+                      />
+                      <em>{unitLabels.height}</em>
+                    </label>
+                  </div>
+                  <p className="panel-hint">
+                    垂直正值代表雷射在瞄具下方；水平正值代表雷射在瞄具右側。
+                  </p>
+                  <div className="field-grid one-up">
+                    <label>
+                      <LabelWithHelp help={helpText.irConvergenceDistance}>交會距離</LabelWithHelp>
+                      <input
+                        disabled={irLaserZeroMode === "parallel"}
+                        min="1"
+                        step={unitMode === "imperial" ? "5" : "5"}
+                        type="number"
+                        value={formatConvertedInput(
+                          irLaserConvergenceDistance,
+                          (value) => metersToDisplayDistance(value, unitMode),
+                          unitMode === "imperial" ? 1 : 0
+                        )}
+                        onChange={(event) =>
+                          setIrLaserConvergenceDistance(
+                            readConvertedInput(event.target.value, (value) =>
+                              displayDistanceToMeters(value, unitMode)
+                            )
+                          )
+                        }
+                      />
+                      <em>{unitLabels.distance}</em>
+                    </label>
+                  </div>
+                  <p className="panel-hint label-with-help">
+                    歸零模式
+                    <HelpTip text={helpText.irZeroMode} />
+                  </p>
+                  <div className="radio-stack">
+                    {[
+                      ["parallel", "平行歸零 (Parallel Zero)", "綠點偏移等於實體偏差，不隨靶紙距離改變。"],
+                      [
+                        "convergent",
+                        "特定距離交會歸零 (Convergent Zero)",
+                        "依上方交會距離與靶紙距離的比例內插綠色校正點。"
+                      ]
+                    ].map(([id, label, description]) => (
+                      <label className="radio-option" key={id}>
+                        <input
+                          checked={irLaserZeroMode === id}
+                          name="ir-zero-mode"
+                          type="radio"
+                          value={id}
+                          onChange={(event) => setIrLaserZeroMode(event.target.value)}
+                        />
+                        <span>
+                          <strong>{label}</strong>
+                          <small>{description}</small>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </section>
           </aside>
 
           <section className="preview-area" aria-label="靶紙預覽">
@@ -885,6 +1055,7 @@ function App() {
               correctionCm={ballistic.correctionCm}
               correctionGridCount={ballistic.correctionGridCount}
               gridCm={currentGridCm}
+              irLaserOffset={irLaserOffset}
               presetLabel={selectedPreset.label}
               targetDistance={targetDistanceM}
               impactOffsetCm={ballistic.impactOffsetCm}
@@ -950,6 +1121,7 @@ function TargetSheet({
   correctionGridCount,
   gridCm,
   impactOffsetCm,
+  irLaserOffset,
   presetLabel,
   targetDistance,
   unitMode,
@@ -1000,6 +1172,17 @@ function TargetSheet({
   const rawImpactY = centerY - impactOffsetCm * pixelsPerCm;
   const impactY = clamp(rawImpactY, gridBox.y + cm(0.8), gridBox.y + gridBox.height - cm(0.8));
   const impactClamped = Math.abs(rawImpactY - impactY) > 0.1;
+  const rawIrLaserX = irLaserOffset ? centerX + irLaserOffset.xCm * pixelsPerCm : null;
+  const rawIrLaserY = irLaserOffset ? centerY + irLaserOffset.yCmDown * pixelsPerCm : null;
+  const irLaserX = irLaserOffset
+    ? clamp(rawIrLaserX, gridBox.x + cm(0.6), gridBox.x + gridBox.width - cm(0.6))
+    : null;
+  const irLaserY = irLaserOffset
+    ? clamp(rawIrLaserY, gridBox.y + cm(0.6), gridBox.y + gridBox.height - cm(0.6))
+    : null;
+  const irLaserClamped = irLaserOffset
+    ? Math.abs(rawIrLaserX - irLaserX) > 0.1 || Math.abs(rawIrLaserY - irLaserY) > 0.1
+    : false;
 
   return (
     <div className="paper-frame">
@@ -1082,6 +1265,22 @@ function TargetSheet({
             落點超出格線範圍
           </text>
         )}
+        {irLaserOffset && (
+          <>
+            <circle
+              className={irLaserClamped ? "ir-laser-dot clamped" : "ir-laser-dot"}
+              cx={irLaserX}
+              cy={irLaserY}
+              r={cm(0.22)}
+            />
+            <circle className="ir-laser-ring" cx={irLaserX} cy={irLaserY} r={cm(0.38)} />
+            {irLaserClamped && (
+              <text className="point-label" x={irLaserX + cm(0.55)} y={irLaserY - cm(0.35)}>
+                IR點超出格線範圍
+              </text>
+            )}
+          </>
+        )}
 
         <rect className="info-box" x={cm(1.2)} y={cm(22.5)} width={cm(18.6)} height={cm(5.8)} rx={cm(0.2)} />
         <text className="sheet-meta" x={cm(1.7)} y={cm(23.35)}>
@@ -1107,6 +1306,14 @@ function TargetSheet({
         <text className="sheet-meta" x={cm(15.1)} y={cm(26.85)}>
           5 cm 比例尺
         </text>
+        {irLaserOffset && (
+          <>
+            <circle className="ir-legend-dot" cx={cm(13.75)} cy={cm(27.55)} r={cm(0.12)} />
+            <text className="sheet-meta" x={cm(14.1)} y={cm(27.7)}>
+              綠色點 = IR雷射校正點
+            </text>
+          </>
+        )}
       </svg>
     </div>
   );
